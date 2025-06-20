@@ -10,6 +10,7 @@ pub fn gdate(year: i32, month: u8, day: u8) -> Option<Date> {
     return Date::from_calendar_date(year, month.try_into().unwrap(), day).ok();
 }
 
+/// Jewish Date representation
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct JDate {
     year: i32,
@@ -18,6 +19,8 @@ pub struct JDate {
 }
 
 impl JDate {
+    /// Create a new JDate with year, month, day. If the date is invalid: None
+    /// is returned.
     pub fn new(year: i32, month: u8, day: u8) -> Option<JDate> {
         if !date_is_valid(year, month, day) {
             return None;
@@ -25,6 +28,7 @@ impl JDate {
         Some(JDate{year, month, day})
     }
 
+    /// Create a new JDate using a Julian Day number
     pub fn from_jd(jd: i32) -> JDate {
         let ed = jd - 347997; // days since epoch
         let mut year = ed * 100 / 36525;
@@ -47,6 +51,8 @@ impl JDate {
             day: (ed-days+1) as u8
         };
     }
+
+    /// Get the Julian Day number
     pub fn to_jd(self: Self) -> i32 {
         let mut ed = year_start(self.year) - 1;
         let days_in_month = year_months(self.year);
@@ -66,10 +72,14 @@ impl JDate {
     }
 
 
+    /// Get the year component
     pub fn year(self: Self) -> i32 {return self.year}
+    /// Get the month component
     pub fn month(self: Self) -> u8 {return self.month}
+    /// Get the day component
     pub fn day(self: Self) -> u8 {return self.day}
 
+    /// Get the month as a string
     pub fn month_name(self: Self) -> &'static str {
         const NAMES: [&str; 13] = [
             "Nisan", "Iyar", "Sivan", "Tamuz", "Av", "Elul",
@@ -218,7 +228,7 @@ pub fn year_start(year: i32) -> i32 {
     return rosh;
 }
 
-// Calculates the number of days in the Jewish year
+/// Calculates the number of days in the Jewish year
 pub fn year_length(year: i32) -> i32 {
     let rosh1 = year_start(year);
     let rosh2 = year_start(year+1);

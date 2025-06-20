@@ -3,6 +3,7 @@ name = "jdate"
 version = "0.1.0"
 edition = "2024"
 description = "A library for converting between Gregorian and Jewish dates"
+repository = "https://github.com/jfcode4/jdate"
 license = "MIT"
 
 [dependencies]
