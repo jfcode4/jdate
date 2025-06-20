@@ -1,12 +1,19 @@
-use jdate::*;
+use jdate::JDate;
+use time::Date;
 
 fn main() {
-    // Convert a gregorian date to Jewish date
-    let date1 = Date::from(2025, 1, 1);
-    let date2 = from_greg(date1);
-    println!("{date2}"); // prints: 5785-10-01
+    // Convert a Gregorian date to a Jewish date
+    let date1 = jdate::gdate(2025, 1, 1).unwrap();
+    let date2 = JDate::from(date1);
+    println!("{date2}"); // prints: 5785-Tevet-01
+                         //
+    // Convert a Jewish date to a Gregorian date
+    let date1 = JDate::new(5785, 1, 1).unwrap();
+    let date2 = Date::from(date1);
+    println!("{date2}"); // prints: 2025-03-30
 
     // Convert today's date
-    let todays_date = from_greg(today());
-    println!("{todays_date}");
+    let today = jdate::today();
+    let today_jdate = JDate::from(today);
+    println!("Today is {today} = {today_jdate}");
 }

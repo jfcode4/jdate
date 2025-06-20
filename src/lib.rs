@@ -1,37 +1,113 @@
-use chrono::{Datelike, Local};
+use time::{OffsetDateTime, Date};
 use std::fmt;
 
-/// The Epoch we use is the molad tohu (Day 1 = 1 Tishrei 1 = 7 September -3760)
-/// It is a theoretical time point 1 year before creation.
-///
+// The Epoch we use is the molad tohu (Day 1 = 1 Tishrei 1 = 7 September -3760)
+// It is a theoretical time point 1 year before creation.
 
-#[derive(Clone, Copy)]
-pub struct Date {
-    year: i32,
-    month: u8,
-    day: u8,
+
+/// An easier way to create a time::Date object
+pub fn gdate(year: i32, month: u8, day: u8) -> Option<Date> {
+    return Date::from_calendar_date(year, month.try_into().unwrap(), day).ok();
 }
 
-impl Date {
-    pub fn from(year: i32, month: u8, day: u8) -> Date {
-        Date{year: year, month: month, day: day}
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct JDate {
+    year: i32,
+    month: u8, // 1 = Nisan, 13 = Adar2
+    day: u8, // 1 - 30
+}
+
+impl JDate {
+    pub fn new(year: i32, month: u8, day: u8) -> Option<JDate> {
+        if !date_is_valid(year, month, day) {
+            return None;
+        }
+        Some(JDate{year, month, day})
+    }
+
+    pub fn from_jd(jd: i32) -> JDate {
+        let ed = jd - 347997; // days since epoch
+        let mut year = ed * 100 / 36525;
+        while year_start(year) < ed {year += 1;}
+        while year_start(year) > ed {year -= 1;}
+        let mut days = year_start(year);
+        let days_in_month = year_months(year);
+        let mut month = 7;
+        loop {
+            let length = days_in_month[month] as i32;
+            if days + length > ed {break}
+            month += 1;
+            if month == 14 {month = 1}
+            if month == 7 {unreachable!()}
+            days += length;
+        }
+        return JDate{
+            year: year,
+            month: month as u8,
+            day: (ed-days+1) as u8
+        };
+    }
+    pub fn to_jd(self: Self) -> i32 {
+        let mut ed = year_start(self.year) - 1;
+        let days_in_month = year_months(self.year);
+        let mut month: u8 = 7;
+        loop {
+            let length = days_in_month[month as usize];
+            if month == self.month {
+                ed += self.day as i32;
+                break;
+            }
+            ed += length as i32;
+            month += 1;
+            if month == 14 {month = 1}
+            if month == 7 {unreachable!()}
+        }
+        return ed + 347997;
+    }
+
+
+    pub fn year(self: Self) -> i32 {return self.year}
+    pub fn month(self: Self) -> u8 {return self.month}
+    pub fn day(self: Self) -> u8 {return self.day}
+
+    pub fn month_name(self: Self) -> &'static str {
+        const NAMES: [&str; 13] = [
+            "Nisan", "Iyar", "Sivan", "Tamuz", "Av", "Elul",
+            "Tishrei", "Cheshvan", "Kislev", "Tevet", "Shvat", "Adar", "Adar2"];
+        if self.month == 12 && is_leap_year(self.year) {
+            return "Adar1"
+        }
+        return NAMES[self.month as usize - 1];
+
     }
 }
 
-impl fmt::Display for Date {
+impl fmt::Display for JDate {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{:0>4}-{:0>2}-{:0>2}", self.year, self.month, self.day)
+        write!(f, "{:0>4}-{}-{:0>2}", self.year, self.month_name(), self.day)
+    }
+}
+
+impl From<Date> for JDate {
+    /// Convert Gregorian Date to JDate
+    fn from(d: Date) -> Self {
+        let jd = d.to_julian_day();
+        return JDate::from_jd(jd);
+    }
+}
+
+impl From<JDate> for Date {
+    /// Convert JDate to Gregorian Date
+    fn from(d: JDate) -> Self {
+        let jd = d.to_jd();
+        return Date::from_julian_day(jd).unwrap();
     }
 }
 
 /// Get today's local date
 pub fn today() -> Date {
-    let now = Local::now();
-    return Date{
-        year: now.year(),
-        month: now.month() as u8,
-        day: now.day() as u8
-    }
+    let now = OffsetDateTime::now_local().unwrap_or(OffsetDateTime::now_utc());
+    return now.date();
 }
 
 /// Determine if the Jewish year is a leap year
@@ -40,6 +116,33 @@ pub fn is_leap_year(year: i32) -> bool {
         0|3|6|8|11|14|17 => true,
         _ => false
     }
+}
+
+/// Determine if the Jewish date is valid
+pub fn date_is_valid(year: i32, month: u8, day: u8) -> bool {
+    if month < 1 || month > 13 || day < 1 || day > 30 {
+        return false;
+    }
+    if month == 13 {
+        return day <= 29 && is_leap_year(year);
+    }
+    if day == 30 {
+        return match month {
+            1|3|5|7|11 => true,
+            2|4|6|10 => false,
+            12 => is_leap_year(year),
+            8 => {
+                let len = year_length(year);
+                len % 10 == 5 // complete year (355 or 385)
+            },
+            9 => {
+                let len = year_length(year);
+                len % 10 >= 4 // complete or regular year (354 or 384)
+            },
+            _ => unreachable!()
+        }
+    }
+    true
 }
 
 /// Calculates the molad of the given year
@@ -115,58 +218,17 @@ pub fn year_start(year: i32) -> i32 {
     return rosh;
 }
 
-// Calculates the length of the Jewish year
+// Calculates the number of days in the Jewish year
 pub fn year_length(year: i32) -> i32 {
     let rosh1 = year_start(year);
     let rosh2 = year_start(year+1);
     return rosh2-rosh1;
 }
 
-/// Determine if a Gregorian year is a leap year
-pub fn greg_leap_year(year: i32) -> bool {
-    return year % 4 == 0 && (year % 100 != 0 || year % 400 == 0)
-}
-
-/// Determine if a Gregorian date is valid
-pub fn greg_valid(d: Date) -> bool {
-    if d.month < 1 || d.month > 12 || d.day < 1 || d.day > 31 {
-        return false
-    }
-    if d.day <= 30 {return true}
-    match d.month {
-        1|3|5|7|8|10|12 => true,
-        4|6|9|11 => if d.day <= 30 {true} else {false},
-        2 => if greg_leap_year(d.year) {d.day <= 29} else {d.day <= 28},
-        _ => unreachable!()
-    }
-}
-
-/// Converts a date in the proleptic Gregorian calendar to a Rata Die day number
-///
-/// Day 1 is January 1, 1. Please note the Gregorian calendar started in 1582
-/// so don't rely on my calculations of dates before that.
-pub fn greg_to_rd(d: Date) -> i32 {
-    assert!(greg_valid(d));
-    let (year, month, day) = (d.year, d.month, d.day);
-    let mut leap_days = (year-1).div_euclid(4) - (year-1).div_euclid(100)
-                      + (year-1).div_euclid(400);
-    if greg_leap_year(year) && month >= 3 {
-        leap_days += 1
-    }
-    let days_until_month = [0, 0, 31, 59, 90, 120, 151,
-                            181, 212, 243, 273, 304, 334];
-    return (year-1) * 365 + days_until_month[month as usize] + day as i32
-        + leap_days;
-}
-
-pub fn from_rd(rd: i32) -> Date {
-    let ed = 1373428 + rd; // days since epoch
-    let mut year = ed * 100 / 36525;
-    while year_start(year) < ed {year += 1;}
-    while year_start(year) > ed {year -= 1;}
-    let mut days = year_start(year);
-    let mut days_in_month = [0, 30, 29, 30, 29, 30, 29,
-                             30, 29, 30, 29, 30, 29, 0];
+/// Returns a list of months with the number of days in them
+pub fn year_months(year: i32) -> [u8; 14] {
+    let mut days_in_month = [0, 30, 29, 30, 29, 30, 29,     // Nisan - Elul
+                                30, 29, 30, 29, 30, 29, 0]; // Tishrei - Adar2
     if is_leap_year(year) {
         days_in_month[12] = 30; days_in_month[13] = 29;
     }
@@ -179,24 +241,7 @@ pub fn from_rd(rd: i32) -> Date {
         // Complete year
         days_in_month[8] = 30;
     }
-    let mut month = 7;
-    loop {
-        let length = days_in_month[month];
-        if days + length > ed {break}
-        month += 1;
-        if month == 14 {month = 1}
-        if month == 7 {unreachable!()}
-        days += length;
-    }
-    return Date{
-        year: year,
-        month: month as u8,
-        day: (ed-days+1) as u8
-    };
-}
-
-pub fn from_greg(d: Date) -> Date {
-    return from_rd(greg_to_rd(d));
+    return days_in_month;
 }
 
 #[cfg(test)]
@@ -227,16 +272,53 @@ mod tests {
 
     #[test]
     fn test_from_greg() {
-        assert_eq!(from_greg(1, 1, 1), (3761, 10, 18));
-        assert_eq!(from_greg(-3760, 9,  7), (1, 7, 1));
-        assert_eq!(from_greg(2024, 12, 31), (5785, 9, 30));
-        assert_eq!(from_greg(2025,  1,  1), (5785, 10, 1));
-        assert_eq!(from_greg(2025,  2,  1), (5785, 11, 3));
-        assert_eq!(from_greg(2025,  3,  1), (5785, 12, 1));
-        assert_eq!(from_greg(2024,  2, 10), (5784, 12, 1));
-        assert_eq!(from_greg(2024,  3, 11), (5784, 13, 1));
-        assert_eq!(from_greg(2024,  4,  9), (5784, 1, 1));
-        assert_eq!(from_greg(2024, 10,  2), (5784, 6, 29));
-        assert_eq!(from_greg(2024, 10,  3), (5785, 7, 1));
+        assert_eq!(JDate::from(gdate(1, 1, 1).unwrap()),
+                   JDate::new(3761, 10, 18).unwrap());
+        assert_eq!(JDate::from(gdate(-3760, 9,  7).unwrap()),
+                   JDate::new(1, 7, 1).unwrap());
+        assert_eq!(JDate::from(gdate(2024, 12, 31).unwrap()),
+                   JDate::new(5785, 9, 30).unwrap());
+        assert_eq!(JDate::from(gdate(2025,  1,  1).unwrap()),
+                   JDate::new(5785, 10, 1).unwrap());
+        assert_eq!(JDate::from(gdate(2025,  2,  1).unwrap()),
+                   JDate::new(5785, 11, 3).unwrap());
+        assert_eq!(JDate::from(gdate(2025,  3,  1).unwrap()),
+                   JDate::new(5785, 12, 1).unwrap());
+        assert_eq!(JDate::from(gdate(2024,  2, 10).unwrap()),
+                   JDate::new(5784, 12, 1).unwrap());
+        assert_eq!(JDate::from(gdate(2024,  3, 11).unwrap()),
+                   JDate::new(5784, 13, 1).unwrap());
+        assert_eq!(JDate::from(gdate(2024,  4,  9).unwrap()),
+                   JDate::new(5784, 1, 1).unwrap());
+        assert_eq!(JDate::from(gdate(2024, 10,  2).unwrap()),
+                   JDate::new(5784, 6, 29).unwrap());
+        assert_eq!(JDate::from(gdate(2024, 10,  3).unwrap()),
+                   JDate::new(5785, 7, 1).unwrap());
+    }
+
+    #[test]
+    fn test_from_jdate() {
+        assert_eq!(Date::from(JDate::new(3761, 10, 18).unwrap()),
+                   gdate(1, 1, 1).unwrap());
+        assert_eq!(Date::from(JDate::new(1, 7, 1).unwrap()),
+                   gdate(-3760, 9, 7).unwrap());
+        assert_eq!(Date::from(JDate::new(5785, 9, 30).unwrap()),
+                   gdate(2024, 12, 31).unwrap());
+        assert_eq!(Date::from(JDate::new(5785, 10, 1).unwrap()),
+                   gdate(2025, 1, 1).unwrap());
+        assert_eq!(Date::from(JDate::new(5785, 11, 3).unwrap()),
+                   gdate(2025, 2, 1).unwrap());
+        assert_eq!(Date::from(JDate::new(5785, 12, 1).unwrap()),
+                   gdate(2025, 3, 1).unwrap());
+        assert_eq!(Date::from(JDate::new(5784, 12, 1).unwrap()),
+                   gdate(2024, 2, 10).unwrap());
+        assert_eq!(Date::from(JDate::new(5784, 13, 1).unwrap()),
+                   gdate(2024, 3, 11).unwrap());
+        assert_eq!(Date::from(JDate::new(5784, 1, 1).unwrap()),
+                   gdate(2024, 4, 9).unwrap());
+        assert_eq!(Date::from(JDate::new(5784, 6, 29).unwrap()),
+                   gdate(2024, 10, 2).unwrap());
+        assert_eq!(Date::from(JDate::new(5785, 7, 1).unwrap()),
+                   gdate(2024, 10, 3).unwrap());
     }
 }
