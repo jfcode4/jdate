@@ -2,6 +2,8 @@
 name = "jdate"
 version = "0.1.0"
 edition = "2024"
+description = "A library for converting between Gregorian and Jewish dates"
+license = "MIT"
 
 [dependencies]
 time = {version = "0.3.*", features = ["local-offset"]}
